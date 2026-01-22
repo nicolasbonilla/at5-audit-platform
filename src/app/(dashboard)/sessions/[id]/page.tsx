@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { SignaturePanel } from '@/components/sessions/signature-panel'
 import { ExportButton } from '@/components/sessions/export-button'
+import { AIAuditorButton } from '@/components/sessions/ai-auditor-button'
 import {
   ArrowLeft,
   Play,
@@ -141,6 +142,12 @@ export default async function SessionDetailPage({ params }: { params: Promise<{ 
         </div>
         <div className="flex gap-2">
           <ExportButton sessionId={id} sessionName={session.name} />
+          <AIAuditorButton
+            sessionId={id}
+            sessionName={session.name}
+            sessionStatus={session.status}
+            testCaseCount={session.totalCount}
+          />
           {(session.status === 'DRAFT' || session.status === 'IN_PROGRESS') && (
             <Button asChild>
               <Link href={`/sessions/${id}/execute`}>
