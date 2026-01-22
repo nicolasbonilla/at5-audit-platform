@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(findstr:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(npm install:*)",
+      "Bash(firebase projects:list:*)",
+      "Bash(firebase use:*)",
+      "Bash(npx prisma:*)",
+      "Bash(powershell -Command \"Start-Process cmd -ArgumentList ''/c cd /d c:\\\\Users\\\\Nicolas\\\\Documents\\\\at5-audit-platform && npx prisma generate && pause'' -Verb RunAs -Wait\")",
+      "Bash(dir /b node_modules.prismaclient)",
+      "Bash(firebase deploy:*)",
+      "Bash(firebase experiments:enable:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
