@@ -159,13 +159,13 @@ export class AIAuditorService extends EventEmitter {
       throw new Error(`LLM provider ${this.config.llm.provider} is not properly configured`)
     }
 
-    // Connect to MCP server
+    // Connect to MCP server (optional - may not be available in cloud environments)
     try {
       await this.mcpClient.connect()
       this.log('INFO', 'MCP connection established')
     } catch (error) {
-      this.log('ERROR', `Failed to connect to MCP server: ${error instanceof Error ? error.message : String(error)}`)
-      throw error
+      // MCP connection is optional - service can still create runs and queue tests
+      this.log('WARNING', `MCP server not available: ${error instanceof Error ? error.message : String(error)}. Running in limited mode.`)
     }
 
     this.initialized = true
