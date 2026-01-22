@@ -15,9 +15,9 @@ import { createAuditLog, AUDIT_ACTIONS } from '@/lib/audit-log'
 
 // Schema de validación para crear/actualizar ejecución
 const executionRequestSchema = z.object({
-  sessionId: z.string().uuid('ID de sesión inválido'),
-  testCaseId: z.string().uuid('ID de caso de prueba inválido'),
-  executorId: z.string().uuid('ID de ejecutor inválido').optional(),
+  sessionId: z.string().min(1, 'ID de sesión requerido'),
+  testCaseId: z.string().min(1, 'ID de caso de prueba requerido'),
+  executorId: z.string().min(1, 'ID de ejecutor inválido').optional(),
   status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'PASSED', 'FAILED', 'BLOCKED', 'SKIPPED'], {
     errorMap: () => ({ message: 'Estado de ejecución inválido' }),
   }),
