@@ -3,6 +3,7 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
+import { authConfig } from './auth.config'
 
 declare module 'next-auth' {
   interface Session {
@@ -27,16 +28,12 @@ declare module 'next-auth' {
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   adapter: PrismaAdapter(prisma) as any,
   session: {
     strategy: 'jwt',
     maxAge: 8 * 60 * 60, // 8 hours
   },
-  pages: {
-    signIn: '/login',
-    error: '/login',
-  },
-  trustHost: true,
   providers: [
     CredentialsProvider({
       name: 'credentials',
@@ -131,22 +128,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id as string
-        token.role = user.role as string
-        token.organizationId = user.organizationId as string
-      }
-      return token
-    },
-    async session({ session, token }) {
-      if (token && session.user) {
-        session.user.id = token.id as string
-        session.user.role = token.role as string
-        session.user.organizationId = token.organizationId as string
-      }
-      return session
-    },
-  },
 })
