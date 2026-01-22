@@ -1,6 +1,5 @@
+import { auth } from '@/lib/auth'
 import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
-import { getToken } from 'next-auth/jwt'
 
 // Rutas públicas que no requieren autenticación
 const publicPaths = ['/', '/login', '/api/auth', '/demo', '/docs', '/support']
@@ -11,8 +10,8 @@ const roleProtectedPaths: Record<string, string[]> = {
   '/settings': ['ADMIN', 'LEAD_AUDITOR'],
 }
 
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
+export default auth((req) => {
+  const { pathname } = req.nextUrl
 
   // Permitir acceso a rutas públicas
   if (publicPaths.some(path => {
@@ -31,29 +30,25 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Verificar autenticación usando JWT token
-  const token = await getToken({
-    req: request,
-    secret: process.env.AUTH_SECRET
-  })
-
-  if (!token) {
-    const loginUrl = new URL('/login', request.url)
+  // Verificar autenticación
+  if (!req.auth) {
+    const loginUrl = new URL('/login', req.url)
     loginUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
   // Verificar permisos de rol para rutas protegidas
+  const userRole = req.auth.user?.role as string
   for (const [path, allowedRoles] of Object.entries(roleProtectedPaths)) {
     if (pathname.startsWith(path)) {
-      if (!allowedRoles.includes(token.role as string)) {
-        return NextResponse.redirect(new URL('/unauthorized', request.url))
+      if (!allowedRoles.includes(userRole)) {
+        return NextResponse.redirect(new URL('/unauthorized', req.url))
       }
     }
   }
 
   return NextResponse.next()
-}
+})
 
 export const config = {
   matcher: [
