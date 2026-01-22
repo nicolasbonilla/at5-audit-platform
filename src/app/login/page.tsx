@@ -34,8 +34,8 @@ function LoginForm() {
       if (result?.error) {
         setError(result.error)
       } else if (result?.ok) {
-        router.push(callbackUrl)
-        router.refresh()
+        // Forzar redirección completa para que el middleware detecte la sesión
+        window.location.href = callbackUrl
       }
     } catch {
       setError('Error al iniciar sesion. Intente nuevamente.')
