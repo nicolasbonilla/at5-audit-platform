@@ -34,6 +34,7 @@ model User {
   avatar          String?
   role            UserRole       @default(VIEWER)
   isActive        Boolean        @default(true)
+  isAIAgent       Boolean        @default(false)  // Marca si es un agente AI
   lastLogin       DateTime?
   failedAttempts  Int            @default(0)
   lockedUntil     DateTime?
@@ -49,6 +50,11 @@ model User {
   auditLogs       AuditLog[]
   comments        Comment[]
   sessions        Session[]
+
+  // Relaciones AI Auditor
+  aiRunsInitiated       AIAuditRun[]            @relation("AIRunInitiator")
+  aiRunsSupervised      AIAuditRun[]            @relation("AIRunSupervisor")
+  aiConfirmationResponses AIConfirmationRequest[]
 }
 
 enum UserRole {
@@ -147,6 +153,7 @@ model TestCase {
 
   // Relaciones
   executions      TestExecution[]
+  aiExecutions    AITestExecution[]
 }
 
 enum Priority {
@@ -196,6 +203,7 @@ model AuditSession {
   reports         Report[]
   auditLogs       AuditLog[]
   comments        Comment[]
+  aiAuditRuns     AIAuditRun[]    // Ejecuciones AI asociadas
 }
 
 enum SessionStatus {
@@ -226,11 +234,13 @@ model TestExecution {
   sessionId       String
   session         AuditSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   stepsCompleted  String?         // JSON array of completed step indices
+  isAutomated     Boolean         @default(false)  // Indica si fue ejecutado por AI
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
   // Relaciones
   evidences       Evidence[]
+  aiExecution     AITestExecution?  // Relación con ejecución AI si aplica
 }
 
 enum ExecutionStatus {
@@ -367,3 +377,371 @@ model Comment {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
+
+// ============================================================================
+// AI AUDITOR - AUTOMATED TEST EXECUTION SYSTEM
+// Compliant with ISO/IEC/IEEE 29119-2 (Test Processes) and IEEE 829
+// ============================================================================
+
+// Configuración del agente AI Auditor
+model AIAuditorConfig {
+  id                    String              @id @default(cuid())
+  name                  String
+  description           String?
+  isActive              Boolean             @default(true)
+  isDefault             Boolean             @default(false)
+
+  // Configuración del proveedor LLM
+  llmProvider           LLMProvider         @default(OPENAI)
+  llmModel              String              @default("gpt-4o")
+  llmTemperature        Float               @default(0.1)
+  llmMaxTokens          Int                 @default(4096)
+
+  // Configuración MCP (Model Context Protocol)
+  mcpServerHost         String              @default("localhost")
+  mcpServerPort         Int                 @default(3001)
+  mcpConnectionType     MCPConnectionType   @default(NAMED_PIPE)
+  mcpPipeName           String              @default("AT5_MCP_PIPE")
+  mcpTimeoutMs          Int                 @default(30000)
+
+  // Configuración de ejecución
+  maxConcurrentTests    Int                 @default(1)
+  delayBetweenTestsMs   Int                 @default(2000)
+  maxRetries            Int                 @default(3)
+  retryDelayMs          Int                 @default(5000)
+  stopOnCriticalFailure Boolean             @default(true)
+
+  // Acciones que requieren confirmación humana (JSON array)
+  actionsRequiringConfirmation String       @default("[\"write_signal\",\"delete_device\",\"stop_device\"]")
+
+  // Configuración de evidencias
+  captureScreenshots    Boolean             @default(true)
+  captureLogs           Boolean             @default(true)
+  captureApiResponses   Boolean             @default(true)
+
+  // Metadatos
+  organizationId        String
+  createdById           String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Relaciones
+  runs                  AIAuditRun[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// Proveedor de modelo de lenguaje
+enum LLMProvider {
+  OPENAI
+  ANTHROPIC
+  GOOGLE_GEMINI
+  MISTRAL
+  OLLAMA
+  DEEPSEEK
+  AZURE_OPENAI
+}
+
+// Tipo de conexión MCP
+enum MCPConnectionType {
+  NAMED_PIPE
+  HTTP
+  STDIO
+  WEBSOCKET
+}
+
+// Ejecución de auditoría automatizada
+model AIAuditRun {
+  id                    String              @id @default(cuid())
+  runNumber             Int                 @default(autoincrement())
+
+  // Estado de la ejecución
+  status                AIAuditRunStatus    @default(PENDING)
+  mode                  AIAuditMode         @default(SEMI_AUTOMATIC)
+
+  // Configuración usada (snapshot para trazabilidad)
+  configSnapshot        String?             // JSON de la configuración al momento de ejecución
+
+  // Sesión de auditoría asociada
+  sessionId             String
+  session               AuditSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  // Usuario que inició la ejecución (opcional para auto-inicio)
+  initiatedById         String?
+  initiatedBy           User?               @relation("AIRunInitiator", fields: [initiatedById], references: [id])
+
+  // Usuario supervisor (puede ser diferente al iniciador)
+  supervisorId          String?
+  supervisor            User?               @relation("AIRunSupervisor", fields: [supervisorId], references: [id])
+
+  // Configuración de referencia
+  configId              String?
+  config                AIAuditorConfig?    @relation(fields: [configId], references: [id])
+
+  // Casos de prueba a ejecutar (JSON array de IDs, null = todos)
+  selectedTestCaseIds   String?
+
+  // Cola de ejecución
+  queuePosition         Int?                // Posición en la cola (null si no está en cola)
+  pendingConfirmationId String?             // ID de confirmación pendiente
+
+  // Control de ejecución
+  stopOnCriticalFailure Boolean             @default(true)
+
+  // Tiempos
+  scheduledAt           DateTime?
+  startedAt             DateTime?
+  completedAt           DateTime?
+  pausedAt              DateTime?
+  estimatedCompletionAt DateTime?
+
+  // Métricas de ejecución
+  totalTests            Int                 @default(0)
+  completedTests        Int                 @default(0)
+  passedTests           Int                 @default(0)
+  failedTests           Int                 @default(0)
+  blockedTests          Int                 @default(0)
+  skippedTests          Int                 @default(0)
+  errorCount            Int                 @default(0)
+
+  // Métricas de rendimiento
+  totalDurationMs       Int?
+  avgTestDurationMs     Int?
+  llmTokensUsed         Int                 @default(0)
+  estimatedCost         Decimal             @default(0) @db.Decimal(10, 6)
+
+  // Notas y observaciones
+  notes                 String?
+  errorMessage          String?
+
+  // Hash de integridad (SHA-256 de todos los resultados)
+  resultsHash           String?
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Relaciones
+  testExecutions        AITestExecution[]
+  confirmationRequests  AIConfirmationRequest[]
+  logs                  AIAuditLog[]
+
+  @@unique([sessionId, runNumber])
+  @@index([status])
+  @@index([sessionId])
+  @@index([initiatedById])
+  @@index([createdAt])
+  @@index([queuePosition])
+}
+
+// Estado de la ejecución AI
+enum AIAuditRunStatus {
+  PENDING               // Programada pero no iniciada
+  INITIALIZING          // Inicializando conexiones
+  RUNNING               // Ejecutando pruebas
+  PAUSED                // Pausada por usuario
+  WAITING_CONFIRMATION  // Esperando confirmación humana
+  COMPLETING            // Finalizando y generando reportes
+  COMPLETED             // Completada exitosamente
+  FAILED                // Fallida por error
+  CANCELLED             // Cancelada por usuario
+  TIMEOUT               // Tiempo de espera agotado
+}
+
+// Modo de ejecución
+enum AIAuditMode {
+  AUTOMATIC             // Sin intervención humana
+  SEMI_AUTOMATIC        // Requiere confirmación para acciones críticas
+  ASSISTED              // IA sugiere, humano ejecuta
+  DRY_RUN               // Simula sin ejecutar (para validación)
+}
+
+// Ejecución individual de caso de prueba por AI
+model AITestExecution {
+  id                    String              @id @default(cuid())
+  sequenceNumber        Int                 // Orden de ejecución en el run
+  testCaseCode          String              // Código del caso para referencia rápida
+
+  // Referencias
+  runId                 String
+  run                   AIAuditRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  testCaseId            String
+  testCase              TestCase            @relation(fields: [testCaseId], references: [id])
+
+  // Ejecución real en la plataforma (se crea al completar)
+  executionId           String?             @unique
+  execution             TestExecution?      @relation(fields: [executionId], references: [id])
+
+  // Estado
+  status                AITestExecutionStatus @default(PENDING)
+
+  // Análisis del caso por la IA
+  analysisJson          String?             // JSON: interpretación del caso por la IA
+  planJson              String?             // JSON: plan de ejecución generado
+
+  // Pasos ejecutados
+  stepResultsJson       String?             // JSON: array de pasos con resultados
+  currentStep           Int                 @default(0)
+  totalSteps            Int                 @default(0)
+
+  // Llamadas MCP realizadas
+  mcpCallsJson          String?             // JSON: log de todas las llamadas MCP
+  mcpCallsCount         Int                 @default(0)
+
+  // Resultado
+  actualResult          String?
+  verdict               AIVerdict?          // Veredicto de la IA
+  confidence            Float?              // Nivel de confianza (0-100)
+  reasoning             String?             // Explicación del veredicto
+
+  // Errores (JSON)
+  errorJson             String?
+
+  // Tiempos
+  startedAt             DateTime?
+  completedAt           DateTime?
+  durationMs            Int?
+
+  // Métricas LLM
+  llmTokensUsed         Int                 @default(0)
+  llmCost               Float               @default(0)
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@unique([runId, sequenceNumber])
+  @@index([runId])
+  @@index([testCaseId])
+  @@index([status])
+}
+
+// Estado de ejecución individual
+enum AITestExecutionStatus {
+  PENDING               // Pendiente de ejecución
+  ANALYZING             // IA analizando el caso
+  PREPARING             // Preparando precondiciones
+  EXECUTING             // Ejecutando pasos
+  VALIDATING            // Validando resultados
+  WAITING_CONFIRMATION  // Esperando confirmación
+  COMPLETED             // Completado
+  FAILED                // Fallido
+  SKIPPED               // Saltado (por dependencia fallida o config)
+  BLOCKED               // Bloqueado (precondición no cumplida)
+  TIMEOUT               // Tiempo agotado
+}
+
+// Veredicto de la IA
+enum AIVerdict {
+  PASS                  // Prueba pasó
+  FAIL                  // Prueba falló
+  BLOCKED               // No se pudo ejecutar
+  INCONCLUSIVE          // Resultado ambiguo, requiere revisión
+  NEEDS_REVIEW          // IA no tiene certeza, solicita revisión humana
+}
+
+// Solicitudes de confirmación
+model AIConfirmationRequest {
+  id                    String              @id @default(cuid())
+
+  // Referencias
+  runId                 String
+  run                   AIAuditRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  testExecutionId       String?
+
+  // Tipo de confirmación
+  type                  ConfirmationType
+
+  // Detalles de la acción
+  action                String              // Nombre de la acción MCP
+  parametersJson        String              // JSON: parámetros de la acción
+  context               String?             // Contexto adicional
+  aiExplanation         String              // Explicación de la IA sobre por qué necesita esta acción
+
+  // Estado
+  status                ConfirmationStatus  @default(PENDING)
+
+  // Respuesta
+  respondedById         String?
+  respondedBy           User?               @relation(fields: [respondedById], references: [id])
+  response              ConfirmationResponse?
+  notes                 String?
+  respondedAt           DateTime?
+
+  // Tiempos
+  expiresAt             DateTime            // Tiempo límite para responder
+
+  createdAt             DateTime            @default(now())
+
+  @@index([runId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+enum ConfirmationType {
+  ACTION_APPROVAL       // Aprobación de acción crítica
+  RESULT_VALIDATION     // Validación de resultado ambiguo
+  PRECONDITION_OVERRIDE // Override de precondición fallida
+  CONTINUE_ON_ERROR     // Continuar después de error
+  MANUAL_INTERVENTION   // Intervención manual requerida
+}
+
+enum ConfirmationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum ConfirmationResponse {
+  APPROVE               // Aprobar y continuar
+  REJECT                // Rechazar y marcar como fallido
+  SKIP                  // Saltar este caso
+  RETRY                 // Reintentar
+  MANUAL                // Ejecutar manualmente
+}
+
+// Log detallado de ejecución AI (para debugging y auditoría)
+model AIAuditLog {
+  id                    String              @id @default(cuid())
+
+  runId                 String
+  run                   AIAuditRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  testExecutionId       String?
+
+  // Tipo de evento
+  eventType             String              // Tipo de evento flexible
+
+  // Nivel de severidad
+  level                 LogLevel            @default(INFO)
+
+  // Contenido
+  message               String
+  metadataJson          String?             // JSON: detalles adicionales
+
+  // Timestamp preciso
+  timestamp             DateTime            @default(now())
+
+  @@index([runId])
+  @@index([testExecutionId])
+  @@index([eventType])
+  @@index([level])
+  @@index([timestamp])
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+// Extensión de relaciones existentes
+// Agregar relación inversa en TestCase para AITestExecution
+// Agregar relación inversa en TestExecution para AITestExecution
+// Agregar relaciones de usuario para AI runs

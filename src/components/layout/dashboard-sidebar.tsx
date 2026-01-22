@@ -16,7 +16,8 @@ import {
   ChevronRight,
   History,
   BarChart3,
-  Users
+  Users,
+  Bot
 } from 'lucide-react'
 
 interface DashboardSidebarProps {
@@ -30,6 +31,7 @@ interface DashboardSidebarProps {
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'LEAD_AUDITOR', 'AUDITOR', 'REVIEWER', 'VIEWER'] },
   { name: 'Sesiones de Auditoria', href: '/sessions', icon: ClipboardList, roles: ['ADMIN', 'LEAD_AUDITOR', 'AUDITOR', 'REVIEWER', 'VIEWER'] },
+  { name: 'AI Auditor', href: '/ai-auditor', icon: Bot, roles: ['ADMIN', 'LEAD_AUDITOR', 'AUDITOR'] },
   { name: 'Reportes', href: '/reports', icon: FileText, roles: ['ADMIN', 'LEAD_AUDITOR', 'AUDITOR', 'REVIEWER', 'VIEWER'] },
   { name: 'Metricas', href: '/metrics', icon: BarChart3, roles: ['ADMIN', 'LEAD_AUDITOR', 'AUDITOR', 'REVIEWER'] },
   { name: 'Audit Log', href: '/audit-log', icon: History, roles: ['ADMIN', 'LEAD_AUDITOR'] },
