@@ -91,12 +91,12 @@ export default function ReportsPage() {
 
       if (reportsRes.ok) {
         const data = await reportsRes.json()
-        setReports(data)
+        setReports(Array.isArray(data) ? data : data.data || [])
       }
 
       if (sessionsRes.ok) {
         const data = await sessionsRes.json()
-        setSessions(data)
+        setSessions(data.data || data)
       }
     } catch (error) {
       console.error('Error fetching data:', error)

@@ -22,7 +22,12 @@
       "Bash(curl -s -X POST \"https://at5-audit-platform2.vercel.app/api/auth/callback/credentials\" )",
       "Bash(powershell -Command \"Invoke-WebRequest -Uri ''https://at5-audit-platform2.vercel.app/api/auth/callback/credentials'' -Method POST -Body @{email=''garcia@axongroup.com'';password=''audit2026''} -UseBasicParsing | Select-Object -ExpandProperty Content\")",
       "Bash(node check-users.js:*)",
-      "Bash(del check-users.js)"
+      "Bash(del check-users.js)",
+      "Bash(curl:*)",
+      "Bash(npm run build:*)",
+      "Bash(dir:*)",
+      "Bash(ls:*)",
+      "Bash(node check-stats.js:*)"
     ]
   }
 }
