@@ -22,6 +22,9 @@ import {
   Loader2,
   ListChecks,
   Activity,
+  ThumbsUp,
+  ThumbsDown,
+  Hand,
 } from 'lucide-react'
 
 // ============================================================================
@@ -69,6 +72,17 @@ interface QueueStats {
   isProcessing: boolean
 }
 
+interface PendingConfirmation {
+  id: string
+  runId: string
+  type: string
+  action: string
+  context: string
+  aiExplanation: string
+  expiresAt: string
+  createdAt: string
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -79,6 +93,8 @@ export default function AIAuditorPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [pendingConfirmations, setPendingConfirmations] = useState<PendingConfirmation[]>([])
+  const [confirmationLoading, setConfirmationLoading] = useState<string | null>(null)
 
   // Mock queue stats for now - would come from API
   const queueStats: QueueStats = {
@@ -108,12 +124,50 @@ export default function AIAuditorPage() {
     }
   }, [])
 
+  // Fetch pending confirmations
+  const fetchConfirmations = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ai-auditor/confirmations')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setPendingConfirmations(data.data || [])
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching confirmations:', err)
+    }
+  }, [])
+
+  // Handle confirmation response
+  const handleConfirmation = async (confirmationId: string, response: 'APPROVE' | 'REJECT' | 'MANUAL') => {
+    setConfirmationLoading(confirmationId)
+    try {
+      const res = await fetch(`/api/ai-auditor/confirmations/${confirmationId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response }),
+      })
+      if (!res.ok) throw new Error('Error al responder')
+      await fetchConfirmations()
+      await fetchRuns()
+    } catch (err) {
+      console.error('Error responding to confirmation:', err)
+    } finally {
+      setConfirmationLoading(null)
+    }
+  }
+
   useEffect(() => {
     fetchRuns()
+    fetchConfirmations()
     // Auto-refresh every 5 seconds for active runs
-    const interval = setInterval(fetchRuns, 5000)
+    const interval = setInterval(() => {
+      fetchRuns()
+      fetchConfirmations()
+    }, 5000)
     return () => clearInterval(interval)
-  }, [fetchRuns])
+  }, [fetchRuns, fetchConfirmations])
 
   // Run actions
   const handleRunAction = async (runId: string, action: 'PAUSE' | 'RESUME' | 'CANCEL') => {
@@ -237,6 +291,83 @@ export default function AIAuditorPage() {
           </Button>
         </div>
       </div>
+
+      {/* Pending Confirmations */}
+      {pendingConfirmations.length > 0 && (
+        <Card className="border-orange-300 bg-orange-50 dark:bg-orange-900/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-orange-700 dark:text-orange-400">
+              <AlertTriangle className="w-5 h-5" />
+              Confirmaciones Pendientes ({pendingConfirmations.length})
+            </CardTitle>
+            <CardDescription>
+              El AI Auditor necesita tu aprobacion para continuar
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {pendingConfirmations.map(confirmation => (
+                <div
+                  key={confirmation.id}
+                  className="p-4 rounded-lg border bg-white dark:bg-gray-800"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge variant="outline">{confirmation.type}</Badge>
+                        <span className="text-sm text-muted-foreground">
+                          Expira: {new Date(confirmation.expiresAt).toLocaleTimeString('es-CL')}
+                        </span>
+                      </div>
+                      <h4 className="font-medium mb-1">{confirmation.action}</h4>
+                      <p className="text-sm text-muted-foreground mb-2">{confirmation.context}</p>
+                      <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
+                        <Bot className="w-4 h-4 inline mr-1" />
+                        {confirmation.aiExplanation}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-4">
+                    <Button
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={() => handleConfirmation(confirmation.id, 'APPROVE')}
+                      disabled={confirmationLoading === confirmation.id}
+                    >
+                      {confirmationLoading === confirmation.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <ThumbsUp className="w-4 h-4 mr-1" />
+                          Aprobar
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleConfirmation(confirmation.id, 'REJECT')}
+                      disabled={confirmationLoading === confirmation.id}
+                    >
+                      <ThumbsDown className="w-4 h-4 mr-1" />
+                      Rechazar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleConfirmation(confirmation.id, 'MANUAL')}
+                      disabled={confirmationLoading === confirmation.id}
+                    >
+                      <Hand className="w-4 h-4 mr-1" />
+                      Manual
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Queue Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

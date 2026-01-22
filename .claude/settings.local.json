@@ -27,7 +27,9 @@
       "Bash(npm run build:*)",
       "Bash(dir:*)",
       "Bash(ls:*)",
-      "Bash(node check-stats.js:*)"
+      "Bash(node check-stats.js:*)",
+      "Bash(npx tsc:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }
